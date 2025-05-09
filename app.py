@@ -1,68 +1,73 @@
-from flask import Flask, request, jsonify
-from datetime import datetime, timedelta, timezone
+import os
+import json
 import requests
-import re
-
+from datetime import datetime, timedelta, timezone
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-app = Flask(__name__)
-
-# Google Calendar 설정
+# Google Calendar API 설정
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-SERVICE_ACCOUNT_FILE = 'charged-chain-442610-k7-7697a201c316.json'
-CALENDAR_ID = 'ph702@solbox.com'
+SERVICE_ACCOUNT_FILE = 'your-service-account-file.json'  # 다운로드한 서비스 계정 JSON 파일 경로
+CALENDAR_ID = 'primary'  # 기본 캘린더 사용
 
-# Slack Webhook 설정
-SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/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'
+# Slack Webhook URL
+SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/your/webhook/url'  # 슬랙 Webhook URL
 
-def get_events_for_date(date_str):
-    try:
-        start = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone(timedelta(hours=9)))
-        end = start.replace(hour=23, minute=59, second=59)
-    except Exception as e:
-        raise ValueError("Invalid date format. Use YYYY-MM-DD.")
-
+# Google Calendar에서 일정 가져오기
+def get_calendar_events(date):
     credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     service = build('calendar', 'v3', credentials=credentials)
-
+    
+    # 날짜 범위 설정 (KST 시간대 사용)
+    start_time = datetime.combine(date, datetime.min.time(), tzinfo=timezone.utc)
+    end_time = start_time + timedelta(days=1)
+    
     events_result = service.events().list(
         calendarId=CALENDAR_ID,
-        timeMin=start.isoformat(),
-        timeMax=end.isoformat(),
+        timeMin=start_time.isoformat(),
+        timeMax=end_time.isoformat(),
         singleEvents=True,
         orderBy='startTime'
     ).execute()
+    
+    events = events_result.get('items', [])
+    return events
 
-    return events_result.get('items', [])
-
-def format_event(event):
-    summary = event.get('summary', 'No Title')
-    return re.sub(r'(CW-\d+)', r'<https://jira.solbox.com/browse/\1|\1>', summary)
-
-def send_to_slack(date_str, events):
+# 이벤트를 Slack으로 전송하기
+def send_to_slack(events, date):
     if not events:
-        message = f"{date_str} 예정된 일정이 없습니다."
+        message = f"{date}에는 예정된 일정이 없습니다."
     else:
-        message = f"{date_str} 예정 작업 공유 드립니다.\n\n"
+        message = f"{date} 예정된 일정:\n"
         for event in events:
-            message += f"- {format_event(event)}\n"
+            event_summary = event.get('summary', 'No Title')
+            message += f"- {event_summary}\n"
 
     payload = {'text': message}
-    return requests.post(SLACK_WEBHOOK_URL, json=payload)
+    response = requests.post(SLACK_WEBHOOK_URL, json=payload)
+    
+    if response.status_code == 200:
+        print("슬랙 메시지 전송 성공!")
+    else:
+        print(f"슬랙 메시지 전송 실패: {response.status_code}")
 
-@app.route("/events", methods=["GET"])
-def handle_request():
-    date_str = request.args.get("date")
-    if not date_str:
-        return jsonify({"error": "Missing date=YYYY-MM-DD parameter"}), 400
+# Flask 서버 설정
+from flask import Flask, request
 
+app = Flask(__name__)
+
+@app.route('/events', methods=['GET'])
+def events():
+    # 요청에서 날짜 받기 (예: /events?date=2025-05-12)
+    date_str = request.args.get('date')
     try:
-        events = get_events_for_date(date_str)
-        response = send_to_slack(date_str, events)
-        return jsonify({"status": "ok", "slack_response": response.text}), response.status_code
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return "잘못된 날짜 형식입니다. 올바른 형식: YYYY-MM-DD", 400
+    
+    events = get_calendar_events(date)
+    send_to_slack(events, date_str)
+    return "Slack으로 일정 전송 완료", 200
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
