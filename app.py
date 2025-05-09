@@ -7,11 +7,11 @@ from googleapiclient.discovery import build
 
 # Google Calendar API 설정
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-SERVICE_ACCOUNT_FILE = 'your-service-account-file.json'  # 다운로드한 서비스 계정 JSON 파일 경로
-CALENDAR_ID = 'primary'  # 기본 캘린더 사용
+SERVICE_ACCOUNT_FILE = 'charged-chain-442610-k7-7697a201c316.json'
+CALENDAR_ID = 'solbox.com_dppveauh7fmtabefn11oc0gh1s@group.calendar.google.com'
 
 # Slack Webhook URL
-SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/your/webhook/url'  # 슬랙 Webhook URL
+SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/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'  # 슬랙 Webhook URL
 
 # Google Calendar에서 일정 가져오기
 def get_calendar_events(date):
